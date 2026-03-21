@@ -6,6 +6,7 @@
   <title>Mi Ubicación</title>
 
   <!-- Leaflet CSS -->
+   <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Google Fonts -->
@@ -262,6 +263,25 @@
       line-height: 1.5;
     }
 
+    /* notification box */
+    #notification-box {
+      display: none;
+      background: rgba(0,245,196,0.08);
+      border: 1px solid rgba(0,245,196,0.3);
+      border-radius: 10px;
+      padding: 12px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--accent);
+      line-height: 1.5;
+      animation: fadeIn 0.5s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     /* ── MAP ── */
     #map {
       width: 100%;
@@ -391,6 +411,24 @@
     </div>
 
     <div>
+      <div class="section-label">Tienda más cercana</div>
+      <div class="coord-card" id="nearest-store-card">
+        <div class="coord-row">
+          <span class="coord-key">TIENDA</span>
+          <span class="coord-val skeleton" id="nearest-name">—</span>
+        </div>
+        <div class="coord-row">
+          <span class="coord-key">DISTANCIA</span>
+          <span class="coord-val skeleton" id="nearest-distance">—</span>
+        </div>
+        <div class="coord-row">
+          <span class="coord-key">DIRECCIÓN</span>
+          <span class="coord-val skeleton" id="nearest-address">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
       <div class="section-label">Capa del mapa</div>
       <div class="layer-grid">
         <button class="layer-btn active" onclick="setLayer('streets', this)">Calles</button>
@@ -405,6 +443,7 @@
     </button>
 
     <div id="error-box"></div>
+    <div id="notification-box"></div>
   </aside>
 
   <!-- MAP -->
@@ -650,13 +689,22 @@
   ];
 
   // Add store markers
+// Add store markers (Reemplaza este bloque en tu código)
   stores.forEach(store => {
     L.marker([store.lat, store.lon])
       .addTo(map)
       .bindPopup(`
-        <b style="color:#00f5c4">${store.name}</b><br/>
-        ${store.address}<br/>
-        <span style="color:#6b6b88">${store.borough} - ${store.region_name}</span>
+        <div style="text-align: center;">
+          <b style="color:#00f5c4; font-size: 1rem;">${store.name}</b><br/>
+          <span style="color:#e8e8f0;">${store.address}</span><br/>
+          <span style="color:#6b6b88; font-size: 0.8rem;">${store.borough} - ${store.region_name}</span>
+          
+          <button 
+            onclick="trazarRuta(${store.lat}, ${store.lon})" 
+            style="margin-top: 10px; width: 100%; padding: 8px; background: #00f5c4; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">
+            📍 Ir a la tienda
+          </button>
+        </div>
       `);
   });
 
@@ -675,6 +723,11 @@
 
   let userMarker = null;
   let accuracyCircle = null;
+  let userCords = null;
+  let routingControl = null;
+  let watchId = null; // Para rastreo continuo opcional
+  let isTracking = false; // Estado del rastreo
+  let notifiedStores = new Set(); // Evitar notificaciones repetidas
 
   function setLayer(name, btn) {
     if (name === currentLayer) return;
@@ -693,6 +746,13 @@
 
     errorBox.style.display = 'none';
     btn.disabled = true;
+
+    // Si está rastreando, detener el rastreo
+    if (isTracking) {
+      stopTracking();
+      return;
+    }
+
     btn.textContent = '⟳ Localizando...';
     badge.className = 'status-badge';
     badge.textContent = '● Buscando señal';
@@ -703,15 +763,53 @@
       return;
     }
 
+    // Usar getCurrentPosition para una sola ubicación
     navigator.geolocation.getCurrentPosition(onSuccess, onError, {
       enableHighAccuracy: true,
-      timeout: 12000,
-      maximumAge: 0,
+      timeout: 15000,
+      maximumAge: 30000, // Cache por 30 segundos
     });
+  }
+
+  // Función para iniciar rastreo continuo
+  function startTracking() {
+    if (isTracking) return;
+
+    const btn = document.getElementById('btn-locate');
+    const badge = document.getElementById('status-badge');
+
+    btn.innerHTML = '<span>⏹️ Detener Rastreo</span>';
+    btn.style.background = 'var(--accent2)';
+    badge.textContent = '● Rastreo activo';
+    isTracking = true;
+
+    watchId = navigator.geolocation.watchPosition(onTrackingUpdate, onError, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 10000,
+    });
+  }
+
+  // Función para detener rastreo continuo
+  function stopTracking() {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+
+    const btn = document.getElementById('btn-locate');
+    btn.innerHTML = '<span>◎ Localizar</span>';
+    btn.style.background = 'var(--accent)';
+    btn.disabled = false;
+    isTracking = false;
+
+    const badge = document.getElementById('status-badge');
+    badge.textContent = '● Sin señal';
   }
 
   function onSuccess(pos) {
     const { latitude: lat, longitude: lng, altitude, speed, accuracy } = pos.coords;
+    userCords = L.latLng(lat, lng);
     const btn = document.getElementById('btn-locate');
     const badge = document.getElementById('status-badge');
 
@@ -759,10 +857,42 @@
 
     map.flyTo([lat, lng], 16, { duration: 1.5, easeLinearity: 0.3 });
 
+    // Check proximity to stores
+    checkStoreProximity(lat, lng);
+
     btn.disabled = false;
-    btn.textContent = '↺ Actualizar';
+    btn.innerHTML = '<span>⏺️ Iniciar Rastreo</span>';
+    btn.onclick = startTracking;
   }
 
+  // Función para actualizaciones durante el rastreo continuo
+  function onTrackingUpdate(pos) {
+    const { latitude: lat, longitude: lng, altitude, speed, accuracy } = pos.coords;
+    userCords = L.latLng(lat, lng);
+
+    // Update coords silently (sin cambiar la UI tanto)
+    document.getElementById('lat-val').textContent = lat.toFixed(6) + '°';
+    document.getElementById('lng-val').textContent = lng.toFixed(6) + '°';
+    document.getElementById('alt-val').textContent = altitude != null ? altitude.toFixed(1) + ' m' : 'N/D';
+    document.getElementById('speed-val').textContent = speed != null ? (speed * 3.6).toFixed(1) + ' km/h' : 'N/D';
+
+    // Update precision bar
+    const pct = Math.max(0, Math.min(100, 100 - (accuracy / 5)));
+    document.getElementById('precision-bar').style.width = pct + '%';
+    document.getElementById('precision-label').textContent = `±${accuracy.toFixed(0)} m de precisión`;
+
+    // Update marker position
+    if (userMarker) {
+      userMarker.setLatLng([lat, lng]);
+    }
+    if (accuracyCircle) {
+      accuracyCircle.setLatLng([lat, lng]);
+      accuracyCircle.setRadius(accuracy);
+    }
+
+    // Check proximity to stores (solo notificar si no se ha notificado antes)
+    checkStoreProximity(lat, lng);
+  }
   function onError(err) {
     const messages = {
       1: 'Permiso de ubicación denegado. Por favor, permite el acceso en tu navegador.',
@@ -785,11 +915,108 @@
     box.textContent = '⚠ ' + msg;
   }
 
-  // Auto-locate on load
-  window.addEventListener('load', () => {
-    setTimeout(locateMe, 800);
-  });
+  function showNotification(msg) {
+    const box = document.getElementById('notification-box');
+    box.style.display = 'block';
+    box.innerHTML = '🔔 ' + msg;
+    // Hide after 10 seconds
+    setTimeout(() => {
+      box.style.display = 'none';
+    }, 10000);
+  }
+
+  // Calculate distance between two points using Haversine formula
+  function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c * 1000; // Convert to meters
+    return distance;
+  }
+
+  // Check proximity to stores and show notifications
+  // --- PROXIMIDAD Y NOTIFICACIONES ---
+  function checkStoreProximity(userLat, userLng) {
+    const proximityThreshold = 500; 
+    let nearestStore = null;
+    let minDistance = Infinity;
+
+    stores.forEach(store => {
+      const distance = calculateDistance(userLat, userLng, store.lat, store.lon);
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearestStore = store;
+      }
+
+      if (distance <= proximityThreshold) {
+        // Si NO hemos notificado esta tienda en esta sesión, avisamos
+        if (!notifiedStores.has(store.store_id)) {
+          const distanceText = distance < 100 ? `${Math.round(distance)}m` : `${(distance/1000).toFixed(1)}km`;
+          
+          showNotification(`¡Tienda cerca! <b>${store.name}</b> a ${distanceText}`);
+          
+          if (Notification.permission === 'granted') {
+            new Notification('Tienda 3B cercana', {
+              body: `${store.name} a ${distanceText}.`,
+              icon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTYiIGZpbGw9IiMwMGY1YzQiLz4KPC9zdmc+'
+            });
+          }
+          notifiedStores.add(store.store_id); 
+        }
+      } else {
+        notifiedStores.delete(store.store_id);
+      }
+    });
+
+    if (nearestStore) {
+      const distanceText = minDistance < 1000 ? `${Math.round(minDistance)}m` : `${(minDistance/1000).toFixed(1)}km`;
+      document.getElementById('nearest-name').textContent = nearestStore.name;
+      document.getElementById('nearest-distance').textContent = distanceText;
+      document.getElementById('nearest-address').textContent = nearestStore.address;
+      document.querySelectorAll('#nearest-store-card .coord-val').forEach(el => el.classList.remove('skeleton'));
+      document.getElementById('nearest-store-card').classList.add('loaded');
+    }
+  }
+
+  // --- PERMISOS Y CARGA INICIAL ---
+  if ('Notification' in window) {
+    Notification.requestPermission();
+  }
+
+  // Removido el auto-locate para evitar pedir permisos cada vez que se carga la página
+  // window.addEventListener('load', () => {
+  //   setTimeout(locateMe, 800);
+  // });
+
+  // --- RUTAS ---
+  window.trazarRuta = function(destLat, destLng) {
+    if (!userCords) {
+      showError("Primero necesitas localizarte para trazar la ruta.");
+      return;
+    }
+    if (routingControl) {
+      map.removeControl(routingControl);
+    }
+    
+    routingControl = L.Routing.control({
+      waypoints: [
+        userCords,
+        L.latLng(destLat, destLng)
+      ],
+      routeWhileDragging: false,
+      addWaypoints: false,
+      fitSelectedRoutes: true,
+      show: false, 
+      lineOptions: {
+        styles: [{ color: '#7b61ff', opacity: 0.8, weight: 6 }] 
+      }
+    }).addTo(map);
+  };
 </script>
-</script src="https:unpkg.com/leaflet@1.9.4/dist/leaftlet.js"><script></script>
 </body>
 </html>
