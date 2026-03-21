@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mi Ubicación</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --panel: #13131a;
+      --border: #2a2a3a;
+      --accent: #00f5c4;
+      --accent2: #7b61ff;
+      --text: #e8e8f0;
+      --muted: #6b6b88;
+      --danger: #ff4d6d;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      z-index: 1000;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    .logo h1 {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .logo h1 span { color: var(--accent); }
+
+    .status-badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: var(--bg);
+      transition: all 0.4s ease;
+    }
+
+    .status-badge.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(0, 245, 196, 0.08);
+      box-shadow: 0 0 16px rgba(0, 245, 196, 0.15);
+    }
+
+    .status-badge.error {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: rgba(255, 77, 109, 0.08);
+    }
+
+    /* ── MAIN LAYOUT ── */
+    main {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ── */
+    aside {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    .section-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .coord-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      transition: border-color 0.3s;
+    }
+
+    .coord-card.loaded { border-color: rgba(0,245,196,0.3); }
+
+    .coord-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .coord-row:last-child { border-bottom: none; }
+
+    .coord-key {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .coord-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+      font-weight: 700;
+      transition: all 0.3s;
+    }
+
+    .coord-val.skeleton {
+      background: var(--border);
+      color: transparent;
+      border-radius: 4px;
+      width: 80px;
+      height: 14px;
+      animation: shimmer 1.5s infinite;
+    }
+
+  @keyframes shimmer {
+    0% { opacity: 0.4 } 50% { opacity: 0.9 } 100% { opacity: 0.4 }
+  }
+
+  /* Precision bar */
+  .precision-bar-wrap {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      height: 6px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .precision-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 999px;
+      transition: width 1s ease;
+    }
+
+    .precision-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* Locate button */
+    .btn-locate {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 0.95rem;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-locate:hover { background: #00ddb0; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,245,196,0.25); }
+    .btn-locate:active { transform: translateY(0); }
+    .btn-locate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* map layers toggle */
+    .layer-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .layer-btn {
+      padding: 10px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .layer-btn:hover { border-color: var(--accent2); color: var(--text); }
+    .layer-btn.active { border-color: var(--accent2); color: var(--accent2); background: rgba(123,97,255,0.1); }
+
+    /* error box */
+    #error-box {
+      display: none;
+      background: rgba(255,77,109,0.08);
+      border: 1px solid rgba(255,77,109,0.3);
+      border-radius: 10px;
+      padding: 12px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--danger);
+      line-height: 1.5;
+    }
+
+    /* ── MAP ── */
+    #map {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    /* Leaflet overrides */
+    .leaflet-container { background: #0d0d14 !important; }
+
+    .leaflet-tile-pane { filter: saturate(0.6) brightness(0.85) hue-rotate(200deg); }
+
+    .custom-marker {
+      width: 40px; height: 40px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .marker-inner {
+      width: 16px; height: 16px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(0,245,196,0.25), 0 0 0 8px rgba(0,245,196,0.1), 0 0 20px rgba(0,245,196,0.4);
+      animation: markerPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes markerPulse {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(0,245,196,0.3), 0 0 0 8px rgba(0,245,196,0.1); }
+      50% { box-shadow: 0 0 0 6px rgba(0,245,196,0.2), 0 0 0 12px rgba(0,245,196,0.06); }
+    }
+
+    .leaflet-popup-content-wrapper {
+      background: var(--panel) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 10px !important;
+      color: var(--text) !important;
+      font-family: 'Space Mono', monospace !important;
+      font-size: 0.75rem !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+    }
+
+    .leaflet-popup-tip { background: var(--panel) !important; }
+    .leaflet-popup-close-button { color: var(--muted) !important; }
+
+    /* Loading overlay */
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(10,10,15,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      gap: 16px;
+      backdrop-filter: blur(4px);
+      transition: opacity 0.5s ease;
+    }
+
+    #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 48px; height: 48px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+
+    /* ── DESTINATION PANEL ── */
+    #dest-panel {
+      display: none;
+      background: var(--bg);
+      border: 1px solid rgba(123,97,255,0.4);
+      border-radius: 10px;
+      padding: 14px;
+      animation: slideIn 0.3s ease;
+    }
+
+    #dest-panel.visible { display: block; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .dest-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
+
+    .dest-address {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    .btn-confirm {
+      width: 100%;
+      padding: 11px;
+      background: var(--accent2);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .btn-confirm:hover { background: #6a50e8; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(123,97,255,0.35); }
+    .btn-confirm:active { transform: translateY(0); }
+    .btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-cancel-route {
+      width: 100%;
+      margin-top: 7px;
+      padding: 8px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .btn-cancel-route:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* Route info */
+    #route-info {
+      display: none;
+      background: var(--bg);
+      border: 1px solid rgba(0,245,196,0.2);
+      border-radius: 10px;
+      padding: 14px;
+      animation: slideIn 0.3s ease;
+    }
+
+    #route-info.visible { display: block; }
+
+    .route-stat {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .route-stat:last-child { border-bottom: none; }
+
+    .route-stat-key {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .route-stat-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* ── IMAGE UPLOADER ── */
+    #anim-panel {
+      display: none;
+      background: var(--bg);
+      border: 1px solid rgba(0,245,196,0.15);
+      border-radius: 10px;
+      padding: 14px;
+      animation: slideIn 0.3s ease;
+    }
+
+    #anim-panel.visible { display: block; }
+
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 14px 10px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .upload-zone:hover { border-color: var(--accent); background: rgba(0,245,196,0.04); }
+    .upload-zone.has-image { border-color: var(--accent); border-style: solid; }
+
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+
+    .upload-preview {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      object-fit: cover;
+      margin: 0 auto 6px;
+      display: none;
+      border: 2px solid var(--accent);
+    }
+
+    .upload-preview.visible { display: block; }
+
+    .upload-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .upload-icon { font-size: 1.4rem; margin-bottom: 4px; }
+
+    /* Speed slider */
+    .speed-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      gap: 8px;
+    }
+
+    .speed-row label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .speed-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .speed-val-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      color: var(--accent);
+      min-width: 28px;
+      text-align: right;
+    }
+
+    .btn-start-anim {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-start-anim:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-start-anim:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-stop-anim {
+      width: 100%;
+      margin-top: 6px;
+      padding: 8px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+
+    .btn-stop-anim:hover { border-color: var(--danger); color: var(--danger); }
+
+    /* Popup confirm button */
+    .popup-confirm-btn {
+      margin-top: 10px;
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--accent2);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .popup-confirm-btn:hover { background: #6a50e8; }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      aside { max-height: 220px; overflow-y: auto; padding: 14px; flex-direction: row; flex-wrap: wrap; gap: 12px; }
+      .section-label { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    <h1><span>prueba ubicación</span></h1>
+  </div>
+  <div class="status-badge" id="status-badge">● Sin señal</div>
+</header>
+
+<main>
+  <!-- SIDEBAR -->
+  <aside>
+    <div>
+      <div class="section-label">Coordenadas</div>
+      <div class="coord-card" id="coord-card">
+        <div class="coord-row">
+          <span class="coord-key">LAT</span>
+          <span class="coord-val skeleton" id="lat-val">—</span>
+        </div>
+        <div class="coord-row">
+          <span class="coord-key">LNG</span>
+          <span class="coord-val skeleton" id="lng-val">—</span>
+        </div>
+        <div class="coord-row">
+          <span class="coord-key">ALT</span>
+          <span class="coord-val skeleton" id="alt-val">—</span>
+        </div>
+        <div class="coord-row">
+          <span class="coord-key">VEL</span>
+          <span class="coord-val skeleton" id="speed-val">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="precision-section">
+      <div class="section-label">Precisión GPS</div>
+      <div class="precision-bar-wrap">
+        <div class="precision-bar" id="precision-bar"></div>
+      </div>
+      <div class="precision-label" id="precision-label">Esperando señal...</div>
+    </div>
+
+    <div>
+      <div class="section-label">Capa del mapa</div>
+      <div class="layer-grid">
+        <button class="layer-btn active" onclick="setLayer('streets', this)">Calles</button>
+        <button class="layer-btn" onclick="setLayer('satellite', this)">Satélite</button>
+        <button class="layer-btn" onclick="setLayer('topo', this)">Topográfico</button>
+        <button class="layer-btn" onclick="setLayer('dark', this)">Oscuro</button>
+      </div>
+    </div>
+
+    <!-- DESTINATION PANEL -->
+    <div id="dest-panel">
+      <div class="section-label">Destino seleccionado</div>
+      <div class="dest-name" id="dest-name">—</div>
+      <div class="dest-address" id="dest-address">—</div>
+      <button class="btn-confirm" id="btn-confirm" onclick="confirmRoute()">
+        ➤ Confirmar ruta
+      </button>
+      <button class="btn-cancel-route" onclick="cancelRoute()">✕ Cancelar</button>
+    </div>
+
+    <!-- ROUTE INFO -->
+    <div id="route-info">
+      <div class="section-label">Información de ruta</div>
+      <div class="route-stat">
+        <span class="route-stat-key">Distancia</span>
+        <span class="route-stat-val" id="route-dist">—</span>
+      </div>
+      <div class="route-stat">
+        <span class="route-stat-key">Tiempo est.</span>
+        <span class="route-stat-val" id="route-time">—</span>
+      </div>
+      <button class="btn-cancel-route" onclick="cancelRoute()">✕ Eliminar ruta</button>
+    </div>
+
+    <!-- ANIMATION PANEL -->
+    <div id="anim-panel">
+      <div class="section-label">Animar en ruta</div>
+
+      <div class="upload-zone" id="upload-zone">
+        <input type="file" accept="image/*" id="img-input" onchange="handleImageUpload(event)" />
+        <img id="upload-preview" class="upload-preview" />
+        <div class="upload-icon">🖼️</div>
+        <div class="upload-label" id="upload-label">Sube tu imagen<br/>PNG, JPG, SVG</div>
+      </div>
+
+      <div class="speed-row">
+        <label>Velocidad</label>
+        <input type="range" id="speed-slider" min="1" max="10" value="4" oninput="document.getElementById('speed-display').textContent = this.value + 'x'" />
+        <span class="speed-val-label" id="speed-display">4x</span>
+      </div>
+
+      <button class="btn-start-anim" id="btn-start-anim" onclick="startAnimation()" disabled>
+        ▶ Iniciar animación
+      </button>
+      <button class="btn-stop-anim" id="btn-stop-anim" onclick="stopAnimation()" style="display:none">
+        ■ Detener
+      </button>
+    </div>
+
+    <button class="btn-locate" id="btn-locate" onclick="locateMe()">
+      ◎ Localizar
+    </button>
+
+    <div id="error-box"></div>
+  </aside>
+
+  <!-- MAP -->
+  <div style="position:relative; overflow:hidden;">
+    <div id="map"></div>
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text">Inicializando mapa...</div>
+    </div>
+  </div>
+</main>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+  // ── MAP SETUP ──
+  const map = L.map('map', { zoomControl: true, attributionControl: true });
+
+  const layers = {
+    streets:   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 18 }),
+    topo:      L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '© OpenTopoMap', maxZoom: 17 }),
+    dark:      L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', { attribution: '© Stadia Maps', maxZoom: 20 }),
+  };
+
+  let currentLayer = 'streets';
+  layers.streets.addTo(map);
+  map.setView([19.4326, -99.1332], 12); // Default: CDMX
+
+  // ── STORE LOCATIONS ──
+  const stores = [
+    {
+      "store_id": "3B_CDMX_001",
+      "name": "Tiendas 3B Centro Histórico",
+      "address": "Calle República de Uruguay 45, Centro",
+      "borough": "Cuauhtémoc",
+      "lat": 19.42847,
+      "lon": -99.13257,
+      "region_id": 1,
+      "region_name": "Región Centro"
+    },
+    {
+      "store_id": "3B_CDMX_002",
+      "name": "Tiendas 3B Doctores",
+      "address": "Dr. Andrade 102, Doctores",
+      "borough": "Cuauhtémoc",
+      "lat": 19.42112,
+      "lon": -99.14331,
+      "region_id": 1,
+      "region_name": "Región Centro"
+    },
+    {
+      "store_id": "3B_CDMX_003",
+      "name": "Tiendas 3B Roma Norte",
+      "address": "Av. Chapultepec 284, Roma Norte",
+      "borough": "Cuauhtémoc",
+      "lat": 19.41782,
+      "lon": -99.15991,
+      "region_id": 1,
+      "region_name": "Región Centro"
+    },
+    {
+      "store_id": "3B_CDMX_004",
+      "name": "Tiendas 3B Condesa",
+      "address": "Av. Michoacán 77, Condesa",
+      "borough": "Cuauhtémoc",
+      "lat": 19.41164,
+      "lon": -99.16943,
+      "region_id": 1,
+      "region_name": "Región Centro"
+    },
+    {
+      "store_id": "3B_CDMX_005",
+      "name": "Tiendas 3B Guerrero",
+      "address": "Eje 1 Norte Mosqueta 56, Guerrero",
+      "borough": "Cuauhtémoc",
+      "lat": 19.44537,
+      "lon": -99.14782,
+      "region_id": 1,
+      "region_name": "Región Centro"
+    },
+    {
+      "store_id": "3B_CDMX_006",
+      "name": "Tiendas 3B Narvarte",
+      "address": "Av. Universidad 930, Narvarte",
+      "borough": "Benito Juárez",
+      "lat": 19.39371,
+      "lon": -99.15788,
+      "region_id": 3,
+      "region_name": "Región Sur"
+    },
+    {
+      "store_id": "3B_CDMX_007",
+      "name": "Tiendas 3B Del Valle",
+      "address": "Félix Cuevas 301, Del Valle",
+      "borough": "Benito Juárez",
+      "lat": 19.37194,
+      "lon": -99.16402,
+      "region_id": 3,
+      "region_name": "Región Sur"
+    },
+    {
+      "store_id": "3B_CDMX_008",
+      "name": "Tiendas 3B Portales",
+      "address": "Eje Central Lázaro Cárdenas 1180, Portales",
+      "borough": "Benito Juárez",
+      "lat": 19.35829,
+      "lon": -99.14974,
+      "region_id": 3,
+      "region_name": "Región Sur"
+    },
+    {
+      "store_id": "3B_CDMX_009",
+      "name": "Tiendas 3B Tacubaya",
+      "address": "Av. Jalisco 89, Tacubaya",
+      "borough": "Miguel Hidalgo",
+      "lat": 19.40213,
+      "lon": -99.18871,
+      "region_id": 1,
+      "region_name": "Región Centro"
+    },
+    {
+      "store_id": "3B_CDMX_010",
+      "name": "Tiendas 3B Polanco",
+      "address": "Calz. General Mariano Escobedo 425, Polanco",
+      "borough": "Miguel Hidalgo",
+      "lat": 19.43491,
+      "lon": -99.18954,
+      "region_id": 1,
+      "region_name": "Región Centro"
+    },
+    {
+      "store_id": "3B_CDMX_011",
+      "name": "Tiendas 3B Anáhuac",
+      "address": "Lago Alberto 210, Anáhuac",
+      "borough": "Miguel Hidalgo",
+      "lat": 19.45102,
+      "lon": -99.18083,
+      "region_id": 2,
+      "region_name": "Región Norte"
+    },
+    {
+      "store_id": "3B_CDMX_012",
+      "name": "Tiendas 3B Santa María la Ribera",
+      "address": "Sabino 312, Santa María la Ribera",
+      "borough": "Cuauhtémoc",
+      "lat": 19.45188,
+      "lon": -99.15426,
+      "region_id": 2,
+      "region_name": "Región Norte"
+    },
+    {
+      "store_id": "3B_CDMX_013",
+      "name": "Tiendas 3B Lindavista",
+      "address": "Av. Instituto Politécnico Nacional 620, Lindavista",
+      "borough": "Gustavo A. Madero",
+      "lat": 19.49761,
+      "lon": -99.12734,
+      "region_id": 2,
+      "region_name": "Región Norte"
+    },
+    {
+      "store_id": "3B_CDMX_014",
+      "name": "Tiendas 3B Vallejo",
+      "address": "Poniente 128 445, Industrial Vallejo",
+      "borough": "Azcapotzalco",
+      "lat": 19.48622,
+      "lon": -99.15549,
+      "region_id": 2,
+      "region_name": "Región Norte"
+    },
+    {
+      "store_id": "3B_CDMX_015",
+      "name": "Tiendas 3B Azcapotzalco Centro",
+      "address": "Av. Azcapotzalco 198, Centro de Azcapotzalco",
+      "borough": "Azcapotzalco",
+      "lat": 19.48401,
+      "lon": -99.18567,
+      "region_id": 2,
+      "region_name": "Región Norte"
+    },
+    {
+      "store_id": "3B_CDMX_016",
+      "name": "Tiendas 3B Iztacalco",
+      "address": "Av. Plutarco Elías Calles 900, Iztacalco",
+      "borough": "Iztacalco",
+      "lat": 19.39564,
+      "lon": -99.09421,
+      "region_id": 3,
+      "region_name": "Región Oriente"
+    },
+    {
+      "store_id": "3B_CDMX_017",
+      "name": "Tiendas 3B Agrícola Oriental",
+      "address": "Sur 16 245, Agrícola Oriental",
+      "borough": "Iztacalco",
+      "lat": 19.40377,
+      "lon": -99.06954,
+      "region_id": 3,
+      "region_name": "Región Oriente"
+    },
+    {
+      "store_id": "3B_CDMX_018",
+      "name": "Tiendas 3B Iztapalapa Centro",
+      "address": "Calz. Ermita Iztapalapa 1080, Iztapalapa",
+      "borough": "Iztapalapa",
+      "lat": 19.35644,
+      "lon": -99.08293,
+      "region_id": 3,
+      "region_name": "Región Oriente"
+    },
+    {
+      "store_id": "3B_CDMX_019",
+      "name": "Tiendas 3B Santa Cruz Meyehualco",
+      "address": "Av. Guelatao 55, Santa Cruz Meyehualco",
+      "borough": "Iztapalapa",
+      "lat": 19.37092,
+      "lon": -99.03387,
+      "region_id": 3,
+      "region_name": "Región Oriente"
+    },
+      {
+      "store_id": "3B_CDMX_021",
+      "name": "Tiendas 3B Polanco V. Sección",
+      "address": "Calz. Gral. Mariano Escobedo 555",
+      "borough": "Miguel Hidalgo",
+      "lat": 19.431139681983787,
+      "lon": -99.18112552820155,
+      "region_id": 3,
+      "region_name": "Región Oriente"
+    },
+    {
+      "store_id": "3B_CDMX_020",
+      "name": "Tiendas 3B Tláhuac",
+      "address": "Av. Tláhuac 6023, Los Olivos",
+      "borough": "Tláhuac",
+      "lat": 19.29673,
+      "lon": -99.01756,
+      "region_id": 3,
+      "region_name": "Región Oriente"
+    }
+  ];
+
+  // ── STORE MARKERS ──
+  let selectedStore = null;
+  let routeLine = null;
+  let selectedMarker = null;
+
+  const storeIcon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width:12px;height:12px;
+      background:#7b61ff;
+      border-radius:50%;
+      border:2px solid rgba(123,97,255,0.4);
+      box-shadow:0 0 8px rgba(123,97,255,0.5);
+    "></div>`,
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  });
+
+  const storeIconSelected = L.divIcon({
+    className: '',
+    html: `<div style="
+      width:16px;height:16px;
+      background:#7b61ff;
+      border-radius:50%;
+      border:3px solid #fff;
+      box-shadow:0 0 0 3px rgba(123,97,255,0.5), 0 0 16px rgba(123,97,255,0.7);
+    "></div>`,
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+  });
+
+  stores.forEach(store => {
+    const marker = L.marker([store.lat, store.lon], { icon: storeIcon }).addTo(map);
+
+    marker.on('click', () => {
+      // Reset previous selected marker
+      if (selectedMarker && selectedMarker !== marker) {
+        selectedMarker.setIcon(storeIcon);
+      }
+      marker.setIcon(storeIconSelected);
+      selectedMarker = marker;
+      selectedStore = store;
+
+      // Update sidebar
+      document.getElementById('dest-name').textContent = store.name;
+      document.getElementById('dest-address').textContent = `${store.address} · ${store.borough}`;
+      document.getElementById('dest-panel').classList.add('visible');
+      document.getElementById('route-info').classList.remove('visible');
+      document.getElementById('btn-confirm').disabled = false;
+      document.getElementById('btn-confirm').textContent = '➤ Confirmar ruta';
+
+      // Popup with confirm button
+      marker.bindPopup(`
+        <div style="min-width:180px">
+          <b style="color:#00f5c4;font-size:0.8rem">${store.name}</b><br/>
+          <span style="color:#6b6b88;font-size:0.7rem">${store.address}</span><br/>
+          <span style="color:#6b6b88;font-size:0.7rem">${store.borough} · ${store.region_name}</span>
+          <button class="popup-confirm-btn" onclick="confirmRoute()">➤ Confirmar ruta</button>
+        </div>
+      `).openPopup();
+    });
+  });
+
+  // ── IMAGE UPLOAD ──
+  let userImageDataUrl = null;
+
+  function handleImageUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      userImageDataUrl = ev.target.result;
+      const preview = document.getElementById('upload-preview');
+      preview.src = userImageDataUrl;
+      preview.classList.add('visible');
+      document.getElementById('upload-zone').classList.add('has-image');
+      document.getElementById('upload-label').textContent = file.name.length > 20
+        ? file.name.slice(0, 18) + '…'
+        : file.name;
+      document.getElementById('upload-icon') && (document.querySelector('.upload-icon').style.display = 'none');
+      // Enable start button if route exists
+      if (routeCoords && routeCoords.length > 0) {
+        document.getElementById('btn-start-anim').disabled = false;
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ── ANIMATION STATE ──
+  let routeCoords = [];
+  let animMarker = null;
+  let animInterval = null;
+  let animIndex = 0;
+
+  function buildAnimIcon(dataUrl) {
+    return L.divIcon({
+      className: '',
+      html: `<img src="${dataUrl}" style="
+        width:40px; height:40px;
+        border-radius:50%;
+        object-fit:cover;
+        border:2px solid #00f5c4;
+        box-shadow:0 0 10px rgba(0,245,196,0.6);
+        transform:translate(-50%,-50%);
+        display:block;
+      "/>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    });
+  }
+
+  function startAnimation() {
+    if (!userImageDataUrl) return;
+    if (!routeCoords || routeCoords.length < 2) return;
+
+    stopAnimation(); // clear any previous
+
+    const speed = parseInt(document.getElementById('speed-slider').value);
+    // step size: higher speed = skip more points per tick
+    const step = Math.max(1, Math.round(speed * 1.5));
+    const intervalMs = Math.max(30, 120 - speed * 10);
+
+    animIndex = 0;
+    animMarker = L.marker(routeCoords[0], { icon: buildAnimIcon(userImageDataUrl), zIndexOffset: 1000 }).addTo(map);
+
+    document.getElementById('btn-stop-anim').style.display = 'block';
+    document.getElementById('btn-start-anim').textContent = '⟳ Animando...';
+    document.getElementById('btn-start-anim').disabled = true;
+
+    animInterval = setInterval(() => {
+      animIndex += step;
+      if (animIndex >= routeCoords.length) {
+        // Loop: restart from beginning
+        animIndex = 0;
+      }
+      animMarker.setLatLng(routeCoords[animIndex]);
+
+      // Rotate icon toward next point
+      if (animIndex + step < routeCoords.length) {
+        const curr = routeCoords[animIndex];
+        const next = routeCoords[Math.min(animIndex + step, routeCoords.length - 1)];
+        const angle = Math.atan2(next[1] - curr[1], next[0] - curr[0]) * 180 / Math.PI;
+        const img = animMarker.getElement()?.querySelector('img');
+        if (img) img.style.transform = `translate(-50%,-50%) rotate(${angle}deg)`;
+      }
+    }, intervalMs);
+  }
+
+  function stopAnimation() {
+    if (animInterval) { clearInterval(animInterval); animInterval = null; }
+    if (animMarker) { map.removeLayer(animMarker); animMarker = null; }
+    document.getElementById('btn-stop-anim').style.display = 'none';
+    document.getElementById('btn-start-anim').textContent = '▶ Iniciar animación';
+    document.getElementById('btn-start-anim').disabled = !userImageDataUrl;
+  }
+
+  // ── ROUTING via OSRM (free, no API key) ──
+  function confirmRoute() {
+    if (!selectedStore) return;
+
+    const btn = document.getElementById('btn-confirm');
+    btn.disabled = true;
+    btn.textContent = '⟳ Calculando...';
+
+    const destLat = selectedStore.lat;
+    const destLon = selectedStore.lon;
+
+    // Get user position
+    if (!userMarker) {
+      showError('Primero obtén tu ubicación con el botón Localizar.');
+      btn.disabled = false;
+      btn.textContent = '➤ Confirmar ruta';
+      return;
+    }
+
+    const userPos = userMarker.getLatLng();
+    const url = `https://router.project-osrm.org/route/v1/driving/${userPos.lng},${userPos.lat};${destLon},${destLat}?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (data.code !== 'Ok') throw new Error('Sin ruta disponible');
+
+        const route = data.routes[0];
+        const coords = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        const distKm = (route.distance / 1000).toFixed(1);
+        const mins = Math.round(route.duration / 60);
+        const timeStr = mins >= 60
+          ? `${Math.floor(mins/60)}h ${mins % 60}min`
+          : `${mins} min`;
+
+        // Remove old route
+        if (routeLine) map.removeLayer(routeLine);
+
+        // Draw animated route
+        routeLine = L.polyline(coords, {
+          color: '#7b61ff',
+          weight: 4,
+          opacity: 0.85,
+          dashArray: '8, 4',
+          lineJoin: 'round',
+        }).addTo(map);
+
+        // Save route coords for animation
+        routeCoords = coords;
+        stopAnimation(); // reset previous anim
+
+        // Show animation panel
+        document.getElementById('anim-panel').classList.add('visible');
+        if (userImageDataUrl) {
+          document.getElementById('btn-start-anim').disabled = false;
+        }
+
+        // Fit map to route
+        map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+
+        // Update route info
+        document.getElementById('route-dist').textContent = `${distKm} km`;
+        document.getElementById('route-time').textContent = timeStr;
+        document.getElementById('route-info').classList.add('visible');
+        document.getElementById('dest-panel').classList.remove('visible');
+
+        btn.disabled = false;
+        btn.textContent = '➤ Confirmar ruta';
+      })
+      .catch(err => {
+        showError('No se pudo calcular la ruta. Verifica tu conexión.');
+        btn.disabled = false;
+        btn.textContent = '➤ Confirmar ruta';
+      });
+  }
+
+  function cancelRoute() {
+    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+    if (selectedMarker) { selectedMarker.setIcon(storeIcon); selectedMarker = null; }
+    selectedStore = null;
+    routeCoords = [];
+    stopAnimation();
+    document.getElementById('dest-panel').classList.remove('visible');
+    document.getElementById('route-info').classList.remove('visible');
+    document.getElementById('anim-panel').classList.remove('visible');
+    map.closePopup();
+  }
+
+  // Hide loading overlay once map is ready
+  map.whenReady(() => {
+    setTimeout(() => document.getElementById('loading-overlay').classList.add('hidden'), 600);
+  });
+
+  // ── CUSTOM MARKER ──
+  const markerIcon = L.divIcon({
+    className: 'custom-marker',
+    html: '<div class="marker-inner"></div>',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  });
+
+  let userMarker = null;
+  let accuracyCircle = null;
+
+  function setLayer(name, btn) {
+    if (name === currentLayer) return;
+    map.removeLayer(layers[currentLayer]);
+    layers[name].addTo(map);
+    currentLayer = name;
+    document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  // ── GEOLOCATION ──
+  function locateMe() {
+    const btn = document.getElementById('btn-locate');
+    const badge = document.getElementById('status-badge');
+    const errorBox = document.getElementById('error-box');
+
+    errorBox.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = '⟳ Localizando...';
+    badge.className = 'status-badge';
+    badge.textContent = '● Buscando señal';
+
+    if (!navigator.geolocation) {
+      showError('Tu navegador no soporta geolocalización.');
+      btn.disabled = false;
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 0,
+    });
+  }
+
+  function onSuccess(pos) {
+    const { latitude: lat, longitude: lng, altitude, speed, accuracy } = pos.coords;
+    const btn = document.getElementById('btn-locate');
+    const badge = document.getElementById('status-badge');
+
+    // Update badge
+    badge.className = 'status-badge active';
+    badge.textContent = '● Señal activa';
+
+    // Update coords
+    document.getElementById('lat-val').textContent = lat.toFixed(6) + '°';
+    document.getElementById('lng-val').textContent = lng.toFixed(6) + '°';
+    document.getElementById('alt-val').textContent = altitude != null ? altitude.toFixed(1) + ' m' : 'N/D';
+    document.getElementById('speed-val').textContent = speed != null ? (speed * 3.6).toFixed(1) + ' km/h' : 'N/D';
+
+    // Remove skeleton
+    document.querySelectorAll('.coord-val').forEach(el => el.classList.remove('skeleton'));
+    document.getElementById('coord-card').classList.add('loaded');
+
+    // Precision bar (accuracy: lower = better; cap at 500m)
+    const pct = Math.max(0, Math.min(100, 100 - (accuracy / 5)));
+    document.getElementById('precision-bar').style.width = pct + '%';
+    document.getElementById('precision-label').textContent = `±${accuracy.toFixed(0)} m de precisión`;
+
+    // Remove old marker & circle
+    if (userMarker) map.removeLayer(userMarker);
+    if (accuracyCircle) map.removeLayer(accuracyCircle);
+
+    // Add accuracy circle
+    accuracyCircle = L.circle([lat, lng], {
+      radius: accuracy,
+      color: '#7b61ff',
+      fillColor: '#7b61ff',
+      fillOpacity: 0.08,
+      weight: 1,
+    }).addTo(map);
+
+    // Add marker
+    userMarker = L.marker([lat, lng], { icon: markerIcon })
+      .addTo(map)
+      .bindPopup(`
+        <b style="color:#00f5c4">📍 Tu ubicación</b><br/>
+        ${lat.toFixed(5)}, ${lng.toFixed(5)}<br/>
+        <span style="color:#6b6b88">Precisión: ±${accuracy.toFixed(0)}m</span>
+      `)
+      .openPopup();
+
+    map.flyTo([lat, lng], 16, { duration: 1.5, easeLinearity: 0.3 });
+
+    btn.disabled = false;
+    btn.textContent = '↺ Actualizar';
+  }
+
+  function onError(err) {
+    const messages = {
+      1: 'Permiso de ubicación denegado. Por favor, permite el acceso en tu navegador.',
+      2: 'No se pudo obtener tu posición. Verifica tu señal GPS.',
+      3: 'Tiempo de espera agotado. Intenta de nuevo.',
+    };
+    showError(messages[err.code] || 'Error desconocido al obtener ubicación.');
+
+    const btn = document.getElementById('btn-locate');
+    const badge = document.getElementById('status-badge');
+    badge.className = 'status-badge error';
+    badge.textContent = '● Error de señal';
+    btn.disabled = false;
+    btn.textContent = '◎ Reintentar';
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    box.textContent = '⚠ ' + msg;
+  }
+
+  // Auto-locate on load
+  window.addEventListener('load', () => {
+    setTimeout(locateMe, 800);
+  });
+</script>
+</script src="https:unpkg.com/leaflet@1.9.4/dist/leaftlet.js"><script></script>
+</body>
+</html>
