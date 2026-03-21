@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mi Ubicación</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --panel: #13131a;
+      --border: #2a2a3a;
+      --accent: #00f5c4;
+      --accent2: #7b61ff;
+      --text: #e8e8f0;
+      --muted: #6b6b88;
+      --danger: #ff4d6d;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      z-index: 1000;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    .logo h1 {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .logo h1 span { color: var(--accent); }
+
+    .status-badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: var(--bg);
+      transition: all 0.4s ease;
+    }
+
+    .status-badge.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(0, 245, 196, 0.08);
+      box-shadow: 0 0 16px rgba(0, 245, 196, 0.15);
+    }
+
+    .status-badge.error {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: rgba(255, 77, 109, 0.08);
+    }
+
+    /* ── MAIN LAYOUT ── */
+    main {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      overflow: hidden;
+    }
+
+    /* ── SIDEBAR ── */
+    aside {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    .section-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .coord-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      transition: border-color 0.3s;
+    }
+
+    .coord-card.loaded { border-color: rgba(0,245,196,0.3); }
+
+    .coord-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .coord-row:last-child { border-bottom: none; }
+
+    .coord-key {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .coord-val {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+      font-weight: 700;
+      transition: all 0.3s;
+    }
+
+    .coord-val.skeleton {
+      background: var(--border);
+      color: transparent;
+      border-radius: 4px;
+      width: 80px;
+      height: 14px;
+      animation: shimmer 1.5s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { opacity: 0.4 } 50% { opacity: 0.9 } 100% { opacity: 0.4 }
+    }
+
+    /* Precision bar */
+    .precision-section { }
+
+    .precision-bar-wrap {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      height: 6px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+
+    .precision-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 999px;
+      transition: width 1s ease;
+    }
+
+    .precision-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* Locate button */
+    .btn-locate {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 0.95rem;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-locate:hover { background: #00ddb0; transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,245,196,0.25); }
+    .btn-locate:active { transform: translateY(0); }
+    .btn-locate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* map layers toggle */
+    .layer-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .layer-btn {
+      padding: 10px 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .layer-btn:hover { border-color: var(--accent2); color: var(--text); }
+    .layer-btn.active { border-color: var(--accent2); color: var(--accent2); background: rgba(123,97,255,0.1); }
+
+    /* error box */
+    #error-box {
+      display: none;
+      background: rgba(255,77,109,0.08);
+      border: 1px solid rgba(255,77,109,0.3);
+      border-radius: 10px;
+      padding: 12px;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--danger);
+      line-height: 1.5;
+    }
+
+    /* ── MAP ── */
+    #map {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    /* Leaflet overrides */
+    .leaflet-container { background: #0d0d14 !important; }
+
+    .leaflet-tile-pane { filter: saturate(0.6) brightness(0.85) hue-rotate(200deg); }
+
+    .custom-marker {
+      width: 40px; height: 40px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .marker-inner {
+      width: 16px; height: 16px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(0,245,196,0.25), 0 0 0 8px rgba(0,245,196,0.1), 0 0 20px rgba(0,245,196,0.4);
+      animation: markerPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes markerPulse {
+      0%, 100% { box-shadow: 0 0 0 4px rgba(0,245,196,0.3), 0 0 0 8px rgba(0,245,196,0.1); }
+      50% { box-shadow: 0 0 0 6px rgba(0,245,196,0.2), 0 0 0 12px rgba(0,245,196,0.06); }
+    }
+
+    .leaflet-popup-content-wrapper {
+      background: var(--panel) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 10px !important;
+      color: var(--text) !important;
+      font-family: 'Space Mono', monospace !important;
+      font-size: 0.75rem !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+    }
+
+    .leaflet-popup-tip { background: var(--panel) !important; }
+    .leaflet-popup-close-button { color: var(--muted) !important; }
+
+    /* Loading overlay */
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(10,10,15,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      gap: 16px;
+      backdrop-filter: blur(4px);
+      transition: opacity 0.5s ease;
+    }
+
+    #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 48px; height: 48px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      aside { max-height: 220px; overflow-y: auto; padding: 14px; flex-direction: row; flex-wrap: wrap; gap: 12px; }
+      .section-label { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    <h1>GEO<span>TRACK</span></h1>
+  </div>
+  <div class="status-badge" id="status-badge">● Sin señal</div>
+</header>
+
+<main>
+  <!-- SIDEBAR -->
+  <aside>
+    <div>
+      <div class="section-label">Coordenadas</div>
+      <div class="coord-card" id="coord-card">
+        <div class="coord-row">
+          <span class="coord-key">LAT</span>
+          <span class="coord-val skeleton" id="lat-val">—</span>
+        </div>
+        <div class="coord-row">
+          <span class="coord-key">LNG</span>
+          <span class="coord-val skeleton" id="lng-val">—</span>
+        </div>
+        <div class="coord-row">
+          <span class="coord-key">ALT</span>
+          <span class="coord-val skeleton" id="alt-val">—</span>
+        </div>
+        <div class="coord-row">
+          <span class="coord-key">VEL</span>
+          <span class="coord-val skeleton" id="speed-val">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="precision-section">
+      <div class="section-label">Precisión GPS</div>
+      <div class="precision-bar-wrap">
+        <div class="precision-bar" id="precision-bar"></div>
+      </div>
+      <div class="precision-label" id="precision-label">Esperando señal...</div>
+    </div>
+
+    <div>
+      <div class="section-label">Capa del mapa</div>
+      <div class="layer-grid">
+        <button class="layer-btn active" onclick="setLayer('streets', this)">Calles</button>
+        <button class="layer-btn" onclick="setLayer('satellite', this)">Satélite</button>
+        <button class="layer-btn" onclick="setLayer('topo', this)">Topográfico</button>
+        <button class="layer-btn" onclick="setLayer('dark', this)">Oscuro</button>
+      </div>
+    </div>
+
+    <button class="btn-locate" id="btn-locate" onclick="locateMe()">
+      ◎ Localizar
+    </button>
+
+    <div id="error-box"></div>
+  </aside>
+
+  <!-- MAP -->
+  <div style="position:relative; overflow:hidden;">
+    <div id="map"></div>
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text">Inicializando mapa...</div>
+    </div>
+  </div>
+</main>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+  // ── MAP SETUP ──
+  const map = L.map('map', { zoomControl: true, attributionControl: true });
+
+  const layers = {
+    streets:   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 18 }),
+    topo:      L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '© OpenTopoMap', maxZoom: 17 }),
+    dark:      L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', { attribution: '© Stadia Maps', maxZoom: 20 }),
+  };
+
+  let currentLayer = 'streets';
+  layers.streets.addTo(map);
+  map.setView([19.4326, -99.1332], 12); // Default: CDMX
+
+  // Hide loading overlay once map is ready
+  map.whenReady(() => {
+    setTimeout(() => document.getElementById('loading-overlay').classList.add('hidden'), 600);
+  });
+
+  // ── CUSTOM MARKER ──
+  const markerIcon = L.divIcon({
+    className: 'custom-marker',
+    html: '<div class="marker-inner"></div>',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  });
+
+  let userMarker = null;
+  let accuracyCircle = null;
+
+  function setLayer(name, btn) {
+    if (name === currentLayer) return;
+    map.removeLayer(layers[currentLayer]);
+    layers[name].addTo(map);
+    currentLayer = name;
+    document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  // ── GEOLOCATION ──
+  function locateMe() {
+    const btn = document.getElementById('btn-locate');
+    const badge = document.getElementById('status-badge');
+    const errorBox = document.getElementById('error-box');
+
+    errorBox.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = '⟳ Localizando...';
+    badge.className = 'status-badge';
+    badge.textContent = '● Buscando señal';
+
+    if (!navigator.geolocation) {
+      showError('Tu navegador no soporta geolocalización.');
+      btn.disabled = false;
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+      enableHighAccuracy: true,
+      timeout: 12000,
+      maximumAge: 0,
+    });
+  }
+
+  function onSuccess(pos) {
+    const { latitude: lat, longitude: lng, altitude, speed, accuracy } = pos.coords;
+    const btn = document.getElementById('btn-locate');
+    const badge = document.getElementById('status-badge');
+
+    // Update badge
+    badge.className = 'status-badge active';
+    badge.textContent = '● Señal activa';
+
+    // Update coords
+    document.getElementById('lat-val').textContent = lat.toFixed(6) + '°';
+    document.getElementById('lng-val').textContent = lng.toFixed(6) + '°';
+    document.getElementById('alt-val').textContent = altitude != null ? altitude.toFixed(1) + ' m' : 'N/D';
+    document.getElementById('speed-val').textContent = speed != null ? (speed * 3.6).toFixed(1) + ' km/h' : 'N/D';
+
+    // Remove skeleton
+    document.querySelectorAll('.coord-val').forEach(el => el.classList.remove('skeleton'));
+    document.getElementById('coord-card').classList.add('loaded');
+
+    // Precision bar (accuracy: lower = better; cap at 500m)
+    const pct = Math.max(0, Math.min(100, 100 - (accuracy / 5)));
+    document.getElementById('precision-bar').style.width = pct + '%';
+    document.getElementById('precision-label').textContent = `±${accuracy.toFixed(0)} m de precisión`;
+
+    // Remove old marker & circle
+    if (userMarker) map.removeLayer(userMarker);
+    if (accuracyCircle) map.removeLayer(accuracyCircle);
+
+    // Add accuracy circle
+    accuracyCircle = L.circle([lat, lng], {
+      radius: accuracy,
+      color: '#7b61ff',
+      fillColor: '#7b61ff',
+      fillOpacity: 0.08,
+      weight: 1,
+    }).addTo(map);
+
+    // Add marker
+    userMarker = L.marker([lat, lng], { icon: markerIcon })
+      .addTo(map)
+      .bindPopup(`
+        <b style="color:#00f5c4">📍 Tu ubicación</b><br/>
+        ${lat.toFixed(5)}, ${lng.toFixed(5)}<br/>
+        <span style="color:#6b6b88">Precisión: ±${accuracy.toFixed(0)}m</span>
+      `)
+      .openPopup();
+
+    map.flyTo([lat, lng], 16, { duration: 1.5, easeLinearity: 0.3 });
+
+    btn.disabled = false;
+    btn.textContent = '↺ Actualizar';
+  }
+
+  function onError(err) {
+    const messages = {
+      1: 'Permiso de ubicación denegado. Por favor, permite el acceso en tu navegador.',
+      2: 'No se pudo obtener tu posición. Verifica tu señal GPS.',
+      3: 'Tiempo de espera agotado. Intenta de nuevo.',
+    };
+    showError(messages[err.code] || 'Error desconocido al obtener ubicación.');
+
+    const btn = document.getElementById('btn-locate');
+    const badge = document.getElementById('status-badge');
+    badge.className = 'status-badge error';
+    badge.textContent = '● Error de señal';
+    btn.disabled = false;
+    btn.textContent = '◎ Reintentar';
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('error-box');
+    box.style.display = 'block';
+    box.textContent = '⚠ ' + msg;
+  }
+
+  // Auto-locate on load
+  window.addEventListener('load', () => {
+    setTimeout(locateMe, 800);
+  });
+</script>
+</body>
+</html>
